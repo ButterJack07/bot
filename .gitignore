@@ -1,0 +1,12 @@
+.env
+.env.*
+1.env
+__pycache__/
+.venv/
+.idea/
+bot.db
+browser-profile/
+wordrank-profile/
+botpy.log
+ai-chat.log
+wordrank-answer.log

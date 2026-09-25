@@ -1,0 +1,79 @@
+[{'text': '玩', 'html': '<button type="button" aria-expanded="false" aria-haspopup="menu" class="flex items-center gap-1 hover:text-primary transition">玩<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="transition-transform "><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>'}, {'text': '学习', 'html': '<button type="button" aria-expanded="false" aria-haspopup="menu" class="flex items-center gap-1 hover:text-primary transition">学习<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="transition-transform "><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>'}, {'text': 'English', 'html': '<button type="button" class="px-2.5 py-1 text-xs font-bold rounded-md transition disabled:opacity-50 text-muted-foreground hover:text-foreground hover:bg-muted" aria-pressed="false">English</button>'}, {'text': '中文', 'html': '<button type="button" class="px-2.5 py-1 text-xs font-bold rounded-md transition disabled:opacity-50 bg-foreground text-background" aria-pressed="true">中文</button>'}, {'text': '', 'html': '<button type="button" aria-label="菜单" aria-expanded="false" class="flex h-9 w-9 items-center justify-center rounded-md text-foreground hover:bg-muted transition"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg></button>'}, {'text': '', 'html': '<button type="button" aria-label="关闭菜单" class="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg></button>'}, {'text': 'English', 'html': '<button type="button" class="px-2.5 py-1 text-xs font-bold rounded-md transition disabled:opacity-50 text-muted-foreground hover:text-foreground hover:bg-muted" aria-pressed="false">English</button>'}, {'text': '中文', 'html': '<button type="button" class="px-2.5 py-1 text-xs font-bold rounded-md transition disabled:opacity-50 bg-foreground text-background" aria-pressed="true">中文</button>'}, {'text': '', 'html': '<button type="button" aria-label="打开菜单" aria-haspopup="menu" aria-expanded="false" class="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg></button>'}, {'text': '💬 反馈', 'html': '<button type="button" class="bg-card text-foreground border-[3px] border-black/90 dark:border-white/80 rounded-full px-4 py-2.5 text-sm font-black transition-transform hover:translate-y-[-1px] active:translate-x-[2px] active:translate-y-[2px]" style="box-shadow:3px 3px 0 0 rgba(0,0,0,0.22)">💬 反馈</button>'}]
+menus=[{'text': 'WordRank\n猜词\n∞', 'href': 'https://wordrank.net/zh'}, {'text': '博客', 'href': 'https://wordrank.net/zh/blog'}, {'text': '今日', 'href': 'https://wordrank.net/zh/daily/today'}, {'text': '无限玩', 'href': 'https://wordrank.net/zh/contexto-unlimited'}, {'text': '词梯', 'href': 'https://wordrank.net/zh/ladder'}, {'text': '历史期', 'href': 'https://wordrank.net/zh/archive'}, {'text': '怎么玩', 'href': 'https://wordrank.net/zh/how-to-play'}, {'text': '像 Contexto 的游戏', 'href': 'https://wordrank.net/zh/games-like-contexto'}, {'text': '博客', 'href': 'https://wordrank.net/zh/blog'}, {'text': '怎么玩', 'href': 'https://wordrank.net/zh/how-to-play'}, {'text': '像 Contexto 的游戏', 'href': 'https://wordrank.net/zh/games-like-contexto'}, {'text': 'Contexto 无限版', 'href': 'https://wordrank.net/zh/contexto-unlimited'}, {'text': '怎么玩', 'href': 'https://wordrank.net/zh/how-to-play'}, {'text': '像 Contexto 的游戏', 'href': 'https://wordrank.net/zh/games-like-contexto'}, {'text': '博客', 'href': 'https://wordrank.net/zh/blog'}, {'text': '历史期归档', 'href': 'https://wordrank.net/zh/archive'}, {'text': '关于', 'href': 'https://wordrank.net/zh/about'}, {'text': '隐私', 'href': 'https://wordrank.net/zh/privacy'}, {'text': '条款', 'href': 'https://wordrank.net/zh/terms'}, {'text': '联系', 'href': 'https://wordrank.net/zh/contact'}]
+storage=[['wordrank:contexto-unlimited:zh', '{"gameId":"4sqnjh","token":"eyJ3b3JkSWQiOjg1MywibGFuZyI6InpoIiwiaWF0IjoxNzg5OTE0OTY4ODkxLCJub25jZSI6IjBQb3NPRGN5WlpjIn0.RldNBIg_Bwd30dv_MzNDXP4e9utuL721bHTCKLVrpVs","wordId":853,"lang":"zh","guesses":[],"startedAt":1789914968314}'], ['google_ama_config', '[[[[null,0,null,[],null,null,"BODY>MAIN.flex.flex-col>DIV.mx-auto.w-full.max-w-2xl.text-center"],4,["10px","10px",1],[2],null,[],[],1,[],[]],[[null,0,null,[],null,null,"BODY>FOOTER.mt-auto.border-t.border-border>DIV.mx-auto.grid.w-full.max-w-4xl.text-sm"],1,["10px","10px",1],[3],null,[],[],1,[],[]],[[null,0,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-4xl.border-t.border-border>.text-2xl.font-black.tracking-tight"],1,["10px","10px",1],[1],null,[],[],1,[],[]],[[null,0,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION"],1,["10px","10px",1],[2],null,[],[],1,[],[]],[[null,0,null,[],null,null,"BODY>FOOTER.mt-auto.border-t.border-border"],1,["10px","10px",1],[0],null,[],[],1,[],[2,4]],[[null,0,null,[],null,null,"BODY"],2,["10px","10px",1],[4],null,[],[],1,[],[]],[[null,0,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-4xl.border-t.border-border>DIV.grid"],4,["40px","10px",1],[1],null,[],[],1,[],[]],[[null,0,null,[],null,null,"HEADER"],4,["10px","10px",1],[4],null,[],[],1,[],[]],[[null,0,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-4xl.border-t.border-border>DIV.grid"],1,["10px","24px",1],[1],null,[],[],1,[],[]]],[],[1790001368178],"20260916_083505",[],[[[[null,0,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-2xl.border-t.border-border"],[null,null,null,[],null,null,"P.text-sm.text-muted-foreground.leading-relaxed"],null,[null,null,null,[],null,null,"H2.text-2xl.font-black.tracking-tight,P,P.text-sm.text-muted-foreground.leading-relaxed"]],[[null,1,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-2xl.border-t.border-border"],[null,null,null,[],null,null,"P.text-base.leading-relaxed"],null,[null,null,null,[],null,null,"H2.text-2xl.font-black.tracking-tight,P.text-base.leading-relaxed"]],[[null,null,null,[],null,null,"BODY>MAIN.flex.flex-col>DIV.mx-auto.w-full.max-w-2xl.text-center"],[null,null,null,[],null,null,"P.text-base.text-muted-foreground.leading-relaxed,P.text-sm.leading-relaxed"],null,[null,null,null,[],null,null,"H1.text-3xl.sm:text-4xl.font-black.tracking-tight.leading-[1.15],P.text-base.text-muted-foreground.leading-relaxed,P.text-sm.leading-relaxed"]],[[null,null,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-2xl.select-none>DIV.relative.flex.flex-col.items-center>DIV.text-center"],[null,null,null,[],null,null,"P.mx-auto.max-w-sm.text-sm.leading-relaxed.text-muted-foreground"],null,[null,null,null,[],null,null,"H2.text-2xl.sm:text-[2rem].font-black.tracking-tight.leading-[1.1],P.mx-auto.max-w-sm.text-sm.leading-relaxed.text-muted-foreground"]],[[null,2,null,[],null,null,"BODY>MAIN.flex.flex-col>SECTION.mx-auto.w-full.max-w-2xl.border-t.border-border"],[null,null,null,[],null,null,"P.text-base.leading-relaxed"],null,[null,null,null,[],null,null,"H2.text-2xl.font-black.tracking-tight,P.text-base.leading-relaxed"]]]],[],[null,[[1,"1vp",[[4,"2vp","2vp"],[6,"3vp","3vp"]],8,"1vp",0.30000001,["0.2vp","0vp",2]],[2,"300px",[[4,"600px","600px"],[6,"900px","900px"]],8,"300px",0.30000001,["60px","0px",2]]]],null,null,null,null,null,null,[null,null,null,null,null,null,null,null,null,null,null,0],null,null,[1,null,null,[]],null,[405119640],null,null,[1789847336090],null,null,null,null,null,null,null,null,null,[["展开/收起工具栏","显示/隐藏隐私设置和法律设置","关闭显示隐私设置和法律设置"]]]']]
+scripts=['https://pagead2.googlesyndication.com/pagead/managed/js/adsense/m202609150101/show_ads_impl.js', 'https://wordrank.net/_next/static/chunks/0zoubvy0kq.6q.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/0771~t619eth2.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/0v_l.uxs~9k5q.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/turbopack-0bua9k8lbwoyh.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/0seserxbz1w0q.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/06l48gn6t1t9z.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/0qx7ysl6n5kf6.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/03dwh36-3umdb.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/0oe0~67zkr4m7.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/0~xjiwp_inwrv.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://wordrank.net/_next/static/chunks/03~yq9q893hmn.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7235866694974340', 'https://fundingchoicesmessages.google.com/i/ca-pub-7235866694974340?href=https%3A%2F%2Fwordrank.net%2Fzh%2Fcontexto-unlimited&ers=2', 'https://fundingchoicesmessages.google.com/f/AGSKWxVLnWJuJoY08--tR0k5S_xHST-RvDGxzn4mMDyCw8zRwJehEO2_NJ93XfwH7hQz9qDkc29_9e1stihi5kAVtUWEN4qjNiBsvF7p6HFkjfklcf1FxCjD9vhKc42yZkem4KCxN-Hb5w==?fccs=W251bGwsbnVsbCxudWxsLG51bGwsbnVsbCxudWxsLFsxNzg5OTE0OTY4LDY2NzAwMDAwMF0sbnVsbCxudWxsLG51bGwsW251bGwsWzddXSwiaHR0cHM6Ly93b3JkcmFuay5uZXQvemgvY29udGV4dG8tdW5saW1pdGVkIixudWxsLFtbOCwidU95MmgyNUQ2OG8iXSxbOSwiZW4tVVMiXSxbMTgsIltbW251bGwsMTYxM11dXSJdLFszNSwiMTc4OTkxNDk2OCJdLFsyNiwiMTgiXSxbMTksIjIiXSxbMTcsIlswXSJdLFsyNCwiIl0sWzI1LCJbWzMxMDk5OTA1XV0iXSxbMjksImZhbHNlIl1dXQ', 'https://fundingchoicesmessages.google.com/f/AGSKWxWCFvxUGq3R3BOBHDBEjbFM_QcNpE0GjgZ3ODN2hKKqmtPZUbCgjwiniVI6MZEGrKwaaX1xuJUAqu4I4QY4iFG7c2Ci55kjmSEp5g0e_4MQkjlQ0T2vOX9hzXby4Zw5kYRl4DHL2w==?fccs=W251bGwsbnVsbCxudWxsLG51bGwsbnVsbCxudWxsLFsxNzg5OTE0OTY4LDc5NzAwMDAwMF0sbnVsbCxudWxsLG51bGwsW251bGwsWzcsOV0sbnVsbCwyLG51bGwsImVuIl0sImh0dHBzOi8vd29yZHJhbmsubmV0L3poL2NvbnRleHRvLXVubGltaXRlZCIsbnVsbCxbWzgsInVPeTJoMjVENjhvIl0sWzksImVuLVVTIl0sWzE4LCJbW1tudWxsLDE2MTNdXV0iXSxbMzUsIjE3ODk5MTQ5NjgiXSxbMjYsIjE4Il0sWzE5LCIyIl0sWzE3LCJbMF0iXSxbMjQsIiJdLFsyNSwiW1szMTA5OTkwNV1dIl0sWzI5LCJmYWxzZSJdXV0', 'https://wordrank.net/_next/static/chunks/0_89jsyyb~6--.js?dpl=dpl_A48cFHYLZ1PHsGPxriu19Pvkvtgd', 'https://www.googletagmanager.com/gtag/js?id=G-04BG6H81WX', 'https://analytics.ahrefs.com/analytics.js']
+options=['玩', '学习', 'English', '中文', '菜单', '关闭菜单', 'English', '中文', '打开菜单', '再来一局', '邀请朋友', '放弃 / 看答案', '💬 反馈']
+WordRank
+猜词
+∞
+玩
+学习
+博客
+English
+中文
+Contexto 无限版
+
+不用等明天。这就是 Contexto 玩法的无限版——输入任意词,按词义接近度逼近神秘词,一局接一局。下面直接开玩。
+
+已猜
+0
+
+排名看的是「是不是同一类词」,不是「你会不会联想到它」。「狗」接近「猫」,但不接近「忠诚」。
+
+什么是 Contexto 无限版?
+
+Contexto 是一个每天出一道题的语义猜词游戏:你输入词,它告诉你离当天的神秘词有多近。问题是——一天只有一题。“Contexto 无限版”指的就是同一种玩法、但不限次数的版本。WordRank 就是这样一个游戏:玩法一脉相承,但你想玩多少局就玩多少局。
+
+Contexto 与 WordRank 对比
+	Contexto	WordRank
+每日限制	每天 1 题	无限制
+和朋友比	无	出题分享链接,比猜词次数
+中文版	有(葡/英/西等)	原生中文,非机翻
+价格	免费	免费,无需注册
+
+玩法相同,差别在"能玩多少"和"能不能拉朋友一起"。
+
+WordRank 受 Contexto 与 Semantle 启发,是独立开发的游戏,与 Contexto 官方无关联。
+
+想先搞懂规则,看 怎么玩;想看看其他同类游戏,看 像 Contexto 的游戏。
+
+常见问题
+这和 Contexto 是同一个游戏吗?
+
+不是同一个,但玩法一脉相承。WordRank 受 Contexto 启发——同样靠词义猜词、同样用排名表示远近——区别是没有每日一题的限制,可以无限玩。
+
+无限玩合法吗?
+
+完全合法。WordRank 是独立做的游戏,用自己的词库和数据,不是破解或镜像 Contexto。它只是把"按词义猜词"这个玩法做成了无限版。
+
+免费吗?
+
+完全免费,无需注册、无广告弹窗、无每日限制。打开页面就能一局接一局地玩。
+
+Contexto 和 WordRank 到底差在哪?
+
+Contexto 每天 1 题;WordRank 无限局。两者都靠语义相似度,但 WordRank 还能出题和朋友比谁猜得少,并且有原生中文版(不是机翻)。
+
+为什么我想要"无限版"?
+
+很多人玩完当天的 Contexto 还想再玩,却要等 24 小时。如果你就是想连着玩、或者想专门练手感,无限版正好解决这个等待。
+
+💬 反馈
+WordRank
+∞
+
+免费、无限畅玩的语义猜词游戏。
+
+© 2026 WordRank
+
+了解游戏
+Contexto 无限版
+怎么玩
+像 Contexto 的游戏
+博客
+历史期归档
+关于
+关于
+隐私
+条款
+联系
