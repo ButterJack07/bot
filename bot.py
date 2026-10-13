@@ -13,10 +13,14 @@ from datetime import date
 from datetime import datetime, timedelta
 from collections import Counter
 from pathlib import Path
+from auto_reply import message_body, normalize_rules, matches as matches_reply_rule
+from chat_render import FACE_PATTERN, channel_content, render_answer_image, render_chat_image
+from chat_media import attachment_urls, cache_image
 
 import botpy
 from botpy.message import GroupMessage, Message
 from botpy.connection import ConnectionState
+from botpy.http import Route
 
 
 def parse_group_message_create(self, payload):
@@ -74,6 +78,10 @@ def group_event_mentions_bot(data, bot_id, bot_name=None):
 def attach_group_display_name(message, data):
     """Keep optional nickname fields that older botpy drops from GroupMessage."""
     author = getattr(message, "author", None)
+    if author is not None:
+        author.chat_image_urls = attachment_urls(data)
+        author.auto_reply_body = message_body(data.get("content", ""), data.get("mentions", []))
+        author.qq_ref_idx = next((item.split("=", 1)[1] for item in (data.get("message_scene") or {}).get("ext", []) if isinstance(item, str) and item.startswith("msg_idx=")), "")
     raw_author = data.get("author", {})
     raw_member = data.get("member", {})
     display_name = (
@@ -160,6 +168,7 @@ magic_state = {}
 magic_messages = {}
 forward_reply_cooldown = {}
 forward_watch_until = {}
+auto_reply_cooldowns = {}
 FORWARD_COOLDOWN_SECONDS = 300
 FORWARD_KEYWORDS = ("a区", "a/a门", "王可", "纵火", "放火", "开门")
 MAGIC_PAGE = r"""<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Jacky Magic</title><style>body{font-family:system-ui;max-width:760px;margin:30px auto;padding:20px;background:#f8f0df;color:#39251d}h1{color:#c85d2e}.groups{display:grid;gap:14px}.group{background:#fff;border:1px solid #d5b99a;padding:14px}.messages{max-height:220px;overflow:auto;background:#f4eadb;padding:10px;white-space:pre-wrap}.form{display:grid;gap:10px;margin-bottom:22px}input{padding:13px;border:1px solid #b88767}button{padding:13px 18px;background:#d97537;color:white;border:0}.muted{color:#8b7566;font-size:13px}pre{white-space:pre-wrap;margin:16px 0;color:#7a4a2a}</style><h1>Jacky Magic</h1><p><a href='/settings'>功能开关</a></p><p class='muted'>勾选要发送的群，再发送文字或图片。Magic 只是允许名单，不要求每次全发。</p><form class='form' id='f'><input id='k' type='password' placeholder='访问码' required><input id='t' placeholder='输入要发送的内容'><input id='image' type='file' accept='image/png,image/jpeg,image/webp'><button>发送文字</button><button type='button' id='sendImage'>发送图片</button></form><div><button type='button' id='all'>全选</button> <button type='button' id='none'>全不选</button></div><pre id='out'></pre><div id='groups' class='groups'></div><script>
@@ -177,10 +186,11 @@ document.getElementById('f').onsubmit=function(e){e.preventDefault();fetch('/mag
 document.addEventListener('paste',function(e){var file=[].slice.call(e.clipboardData.files).filter(function(f){return f.type.indexOf('image/')===0})[0];if(file){var dt=new DataTransfer();dt.items.add(file);image.files=dt.files;show('已粘贴图片，可点击发送图片')}});
 load();setInterval(load,3000);
 </script>"""
-SETTINGS_PAGE = r"""<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Jacky 开关</title><style>body{font-family:system-ui;max-width:640px;margin:30px auto;padding:20px;background:#f8f0df;color:#39251d}h1{color:#c85d2e}input[type=password]{padding:13px;border:1px solid #b88767;width:100%}label{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #d5b99a;padding:14px;margin:8px 0;font-size:15px}input[type=checkbox]{width:20px;height:20px}.muted{color:#8b7566;font-size:13px}#out{margin:12px 0;color:#a74825}a{color:#c85d2e}</style><h1>Jacky 功能开关</h1><p class='muted'>输入访问码后，打开或关闭对应功能，立即生效。</p><input id='k' type='password' placeholder='访问码'><div id='out'></div><div id='list'></div><script>
-var k=document.getElementById('k'),out=document.getElementById('out'),list=document.getElementById('list');
+SETTINGS_PAGE = r"""<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Jacky 开关</title><style>body{font-family:system-ui;max-width:640px;margin:30px auto;padding:20px;background:#f8f0df;color:#39251d}h1,h2{color:#c85d2e}input[type=password],textarea{padding:13px;border:1px solid #b88767;width:100%;box-sizing:border-box}textarea{min-height:140px;font:inherit;line-height:1.6}button{padding:10px 16px;background:#d97537;color:white;border:0;cursor:pointer}.keywords{background:#fff;border:1px solid #d5b99a;padding:14px;line-height:1.8}.keyword-actions{margin-top:8px}.muted{color:#8b7566;font-size:13px}label{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #d5b99a;padding:14px;margin:8px 0;font-size:15px}input[type=checkbox]{width:20px;height:20px}#out{margin:12px 0;color:#a74825}a{color:#c85d2e}</style><h1>Jacky 功能开关</h1><p class='muted'>输入访问码后，打开或关闭对应功能，立即生效。</p><input id='k' type='password' placeholder='访问码'><div id='out'></div><div id='list'></div><h2>转发关键词清单</h2><p class='muted'>每行一个关键词，消息包含任一关键词时会触发转发。</p><textarea id='keywords' placeholder='每行输入一个关键词'></textarea><div class='keyword-actions'><button type='button' id='saveKeywords'>保存关键词</button></div><script>
+var k=document.getElementById('k'),out=document.getElementById('out'),list=document.getElementById('list'),keywords=document.getElementById('keywords');
 k.value=localStorage.magicKey||'';
-function load(){fetch('/settings/data',{headers:{'X-Jacky-Bridge':k.value}}).then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d}})}).then(function(res){if(!res.ok){out.textContent=res.d.error||'访问码错误';list.innerHTML='';return}out.textContent='已连接';list.innerHTML=res.d.toggles.map(function(t){return '<label><input type=checkbox data-key='+t.key+' '+(t.value?'checked':'')+'> '+t.label+'</label>'}).join('');[].slice.call(list.querySelectorAll('input')).forEach(function(box){box.onchange=function(){fetch('/settings',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':k.value},body:JSON.stringify({key:box.getAttribute('data-key'),value:box.checked})}).then(function(r){return r.json()}).then(function(d){out.textContent=d.ok?('已更新：'+d.key+' 现在为 '+(d.value?'开启':'关闭')):(d.error||'更新失败')}).catch(function(){out.textContent='更新失败'})}})}).catch(function(){out.textContent='连接失败'})}
+function load(){fetch('/settings/data',{headers:{'X-Jacky-Bridge':k.value}}).then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d}})}).then(function(res){if(!res.ok){out.textContent=res.d.error||'访问码错误';list.innerHTML='';keywords.value='';return}out.textContent='已连接';keywords.value=res.d.forward_keywords.join('\n');list.innerHTML=res.d.toggles.map(function(t){return '<label><input type=checkbox data-key='+t.key+' '+(t.value?'checked':'')+'> '+t.label+'</label>'}).join('');[].slice.call(list.querySelectorAll('input')).forEach(function(box){box.onchange=function(){fetch('/settings',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':k.value},body:JSON.stringify({key:box.getAttribute('data-key'),value:box.checked})}).then(function(r){return r.json()}).then(function(d){out.textContent=d.ok?('已更新：'+d.key+' 现在为 '+(d.value?'开启':'关闭')):(d.error||'更新失败')}).catch(function(){out.textContent='更新失败'})}})}).catch(function(){out.textContent='连接失败'})}
+document.getElementById('saveKeywords').onclick=function(){var values=keywords.value.split(/[\n,，]/);fetch('/settings/keywords',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':k.value},body:JSON.stringify({keywords:values})}).then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d}})}).then(function(res){if(res.ok){keywords.value=res.d.keywords.join('\n');out.textContent='关键词已保存并立即生效'}else out.textContent=res.d.error||'保存失败'}).catch(function(){out.textContent='保存失败'})};
 k.addEventListener('change',function(){localStorage.magicKey=k.value;load()});
 load();
 </script>"""
@@ -188,11 +198,11 @@ QQCHAT_PAGE = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Jacky QQ Chat</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#e8e8e8;height:100vh;display:flex;overflow:hidden}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#e8e8e8;height:100vh;height:100dvh;display:flex;overflow:hidden}
 .sidebar{width:280px;background:#2e2e2e;color:#fff;display:flex;flex-direction:column;flex-shrink:0}
 .sidebar-header{padding:16px;background:#1a1a1a;display:flex;align-items:center;gap:12px}
 .sidebar-header input{flex:1;padding:8px 12px;border:none;border-radius:4px;background:#3a3a3a;color:#fff;font-size:13px}
@@ -220,10 +230,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#e8e8e8;height:100vh
 .message.own .message-sender{text-align:right}
 .message-bubble{padding:10px 14px;border-radius:8px;background:#fff;word-break:break-word;font-size:14px;line-height:1.5;box-shadow:0 1px 2px rgba(0,0,0,0.08)}
 .message.own .message-bubble{background:#95ec69}
+.message-bubble .chat-media{display:block;max-width:min(320px,65vw);max-height:400px;width:auto;height:auto;object-fit:contain}.media-failed{display:block;color:#98704d;font-size:12px;padding:8px}.sticker-placeholder{display:inline-block;border:1px solid #ddd;background:#f5f5f5;padding:6px 10px;border-radius:6px;color:#777}
 .message-bubble img{max-width:200px;max-height:200px;border-radius:4px;cursor:pointer}
+.qq-face{display:inline-block;vertical-align:middle;margin:0 2px}.message-bubble img.qq-face-img{width:32px;height:32px;vertical-align:middle;object-fit:contain}.message-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}.message-actions button{border:1px solid #ddd;background:white;border-radius:4px;padding:3px 7px;cursor:pointer;font-size:12px}.message-actions button:disabled{opacity:.45;cursor:default}.recalled{color:#999;font-style:italic}.emoji-grid img{width:28px;height:28px;object-fit:contain}
 .message-time{font-size:11px;color:#aaa;margin-top:4px}
 .message.own .message-time{text-align:right}
-.input-area{background:#f5f5f5;border-top:1px solid #ddd;padding:12px 20px}
+.input-area{background:#f5f5f5;border-top:1px solid #ddd;padding:12px 20px;position:relative;overflow:visible}
 .toolbar{display:flex;gap:8px;margin-bottom:8px}
 .toolbar button{padding:6px 12px;border:1px solid #ddd;background:#fff;border-radius:4px;cursor:pointer;font-size:13px;transition:all .15s}
 .toolbar button:hover{background:#e8e8e8}
@@ -233,10 +245,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#e8e8e8;height:100vh
 .input-box input:focus{border-color:#4a90d9}
 .input-box button{padding:10px 20px;background:#4a90d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;transition:background .15s}
 .input-box button:hover{background:#3a7bc8}
-.emoji-panel{position:absolute;bottom:100%;left:20px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;display:none;grid-template-columns:repeat(8,1fr);gap:4px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:100;max-width:320px}
-.emoji-panel.show{display:grid}
-.emoji-panel span{font-size:22px;cursor:pointer;padding:4px;text-align:center;border-radius:4px;transition:background .1s}
-.emoji-panel span:hover{background:#f0f0f0}
+.emoji-panel{position:absolute;bottom:100%;left:20px;background:#fff;border:1px solid #ddd;border-radius:8px;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:100;width:420px;max-width:calc(100vw - 40px)}
+.emoji-panel.show{display:block}
+.emoji-tabs{display:flex;border-bottom:1px solid #eee;margin-bottom:8px;overflow-x:auto}
+.emoji-tabs button{flex:1;padding:8px 4px;border:none;background:none;cursor:pointer;font-size:12px;color:#888;white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s}
+.emoji-tabs button.active{color:#4a90d9;border-bottom-color:#4a90d9}
+.emoji-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;max-height:300px;overflow-y:auto;padding:6px}
+.emoji-grid span{font-size:22px;cursor:pointer;padding:4px;text-align:center;border-radius:4px;transition:background .1s}
+.emoji-grid span:hover{background:#f0f0f0}
 .member-panel{width:200px;background:#f5f5f5;border-left:1px solid #ddd;overflow-y:auto;flex-shrink:0}
 .member-panel h3{padding:12px 16px;font-size:13px;color:#888;border-bottom:1px solid #ddd}
 .member-item{padding:8px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;transition:background .1s}
@@ -258,10 +274,39 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#e8e8e8;height:100vh
 .image-preview{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:300;cursor:pointer}
 .image-preview.show{display:flex}
 .image-preview img{max-width:90%;max-height:90%;border-radius:4px}
+.overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:50}
+.overlay.show{display:block}
+.message-bubble{touch-action:pan-y;-webkit-touch-callout:none}.message.selected .message-bubble{outline:2px solid #4a90d9}.message-actions{display:none}.message-menu{position:fixed;z-index:400;background:white;box-shadow:0 4px 24px #0003;border-radius:10px;padding:6px;min-width:170px;max-height:80vh;overflow:auto}.message-menu button{display:block;width:100%;padding:10px 14px;border:0;background:white;text-align:left;cursor:pointer}.message-menu button:disabled{color:#aaa;cursor:default}.batch-bar,.quote-bar{background:#e8f0ff;padding:8px 14px;font-size:13px}.batch-bar button,.quote-bar button{margin-left:8px;padding:5px 8px;border:1px solid #bdd4f4;background:white;border-radius:4px}.quoted-message{border-left:3px solid #aaa;padding:4px 8px;background:#00000008;color:#666;font-size:12px;margin-bottom:6px}
+.back-btn{display:none;background:none;border:none;color:#4a90d9;font-size:14px;cursor:pointer;padding:4px 8px}
+.member-toggle{display:none;background:none;border:none;color:#4a90d9;font-size:14px;cursor:pointer;padding:4px 8px}
+@media(max-width:768px){
+.sidebar{position:fixed;top:0;left:0;bottom:0;z-index:60;transform:translateX(-100%);transition:transform .25s}
+.sidebar.open{transform:translateX(0)}
+.main{width:100%}
+.member-panel{position:fixed;top:0;right:0;bottom:0;z-index:60;transform:translateX(100%);transition:transform .25s}
+.member-panel.open{transform:translateX(0)}
+.back-btn{display:block}
+.member-toggle{display:block}
+.chat-header{padding:10px 12px}
+.chat-header h2{font-size:14px}
+.messages{padding:12px}
+.message-content{max-width:75%}
+.message-avatar{width:32px;height:32px;font-size:12px}
+.message-bubble{padding:8px 12px;font-size:13px}
+.input-area{padding:8px 12px}
+.input-box input{padding:8px 12px;font-size:13px}
+.input-box button{padding:8px 16px;font-size:13px}
+.emoji-panel{left:12px;right:12px;width:auto;max-width:none}
+.emoji-grid{grid-template-columns:repeat(8,1fr);max-height:min(45vh,300px)}
+.emoji-panel span{font-size:20px}
+.toolbar button{padding:5px 10px;font-size:12px}
+.nickname-modal-content{width:90%;max-width:320px}
+}
 </style>
 </head>
 <body>
-<div class="sidebar">
+<div class="overlay" id="overlay" onclick="closePanels()"></div>
+<div class="sidebar" id="sidebar">
 <div class="sidebar-header">
 <input id="accessKey" type="password" placeholder="访问码" value="">
 </div>
@@ -269,24 +314,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#e8e8e8;height:100vh
 </div>
 <div class="main">
 <div class="chat-header">
+<button class="back-btn" onclick="toggleSidebar()">☰</button>
 <h2 id="chatTitle">选择一个群开始聊天</h2>
-<span class="member-count" id="memberCount"></span>
+<button class="member-toggle" onclick="toggleMembers()">成员</button>
 </div>
 <div class="messages" id="messages"><div class="empty-state">请从左侧选择一个群</div></div>
+<div class="batch-bar" id="batchBar" hidden><span id="selectionCount"></span><button onclick="selectAllMessages()">全选</button><button id="mergeButton" onclick="mergeForward()">合并转发（图片）</button><button onclick="cancelSelection()">取消多选</button></div>
+<div class="quote-bar" id="quoteBar" hidden><span id="quoteText"></span><button onclick="cancelQuote()">取消引用</button></div>
 <div class="input-area" id="inputArea" style="display:none">
 <div class="toolbar">
 <button onclick="toggleEmoji()">表情</button>
 <button onclick="document.getElementById('imageInput').click()">图片</button>
 <input type="file" id="imageInput" accept="image/*" onchange="sendImage(this)">
 </div>
-<div class="emoji-panel" id="emojiPanel"></div>
+<div class="emoji-panel" id="emojiPanel">
+<div class="emoji-tabs" id="emojiTabs"></div>
+<div class="emoji-grid" id="emojiGrid"></div>
+</div>
 <div class="input-box">
 <input id="messageInput" placeholder="输入消息..." onkeydown="handleKeyDown(event)">
 <button onclick="sendMessage()">发送</button>
 </div>
 </div>
 </div>
-<div class="member-panel" id="memberPanel" style="display:none">
+<div class="member-panel" id="memberPanel">
 <h3>群成员</h3>
 <div id="memberList"></div>
 </div>
@@ -309,30 +360,73 @@ var token=localStorage.getItem('magicKey')||'';
 var groups=[];
 var currentGroup=null;
 var messages=[];
+var selectedMessageIds=new Set(),selectionMode=false,replyTo=null,menuMessageId=null,pressTimer=null,pressX=0,pressY=0,suppressClick=false,mergeBusy=false;
 var members=[];
 var nicknames={};
-var emojis=['😀','😂','🤣','😊','😍','😘','🥰','😎','🤩','🥳','😢','😭','😤','😡','🤯','🥺','😱','🤔','🤗','🤭','😴','🤮','🤧','🥴','😵','🤠','🥸','😈','👻','💀','👽','🤖','🎃','❤️','🧡','💛','💚','💙','💜','🖤','🤍','💔','❣️','💕','💞','💓','💗','💖','💘','💝','👍','👎','👌','✌️','🤞','🤟','🤘','👏','🙌','🤝','💪','🙏','👀','👋','🖐️','✋','🤚','👊','✊','🤛','🤜','🎉','🎊','🎈','🎁','🏆','🥇','🥈','🥉','⚽','🏀','🎮','🎲','🎯','🎳','🎸','🎹','🎺','🎻','🥁','🎤','🎧','🎬','📷','💡','🔥','⭐','🌟','✨','💫','🌈','☀️','🌙','⛅','🌊','🌸','🌺','🌻','🌹','🍀','🌿','🌴','🍎','🍊','🍋','🍉','🍇','🍓','🍑','🥭','🍍','🥝','🍅','🥑','🌽','🥕','🌶️','🥔','🍞','🧀','🍗','🍖','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🍜','🍝','🍣','🍱','🍩','🍪','🎂','🍰','🧁','🍫','🍬','🍭','🍿','☕','🍵','🥤','🍺','🍻','🥂','🍷','🥃','🍸','🍹'];
-var emojiPanel=document.getElementById('emojiPanel');
-emojis.forEach(function(e){var s=document.createElement('span');s.textContent=e;s.onclick=function(){document.getElementById('messageInput').value+=e;emojiPanel.classList.remove('show')};emojiPanel.appendChild(s)});
-function toggleEmoji(){emojiPanel.classList.toggle('show')}
+var groupNicknames={};
+var emojiCategories={
+'smileys':['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','🫨','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐'],
+'gestures':['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💪','🦾','🦵','🦿','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄','🫦','💋'],
+'animals':['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🦈','🐊','🐅','🦓','🦍','🦧','🦣','🐘','🦛','🦒','🐪','🐫','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🦔'],
+'food':['🍎','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'],
+'objects':['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','🕹️','🗜️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🪫','🔌','💡','🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒️','🛠️','⛏️','🪚','🔩','⚙️','🪤','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🪥','🪒','🧽','🪣','🧴','🛎️','🔑','🗝️','🚪','🪑','🛋️','🛏️','🧸','🪆','🖼️','🪞','🪟','🛍️','🛒','🎁','🎈','🎏','🎀','🪄','🪅','🎊','🎉','🎎','🏮','🎐','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','🪧','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','🧾','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','🗞️','📰','📓','📔','📒','📕','📗','📘','📙','📚','📖','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✒️','🖌️','🖍️','📝','✏️','🔍','🔎','🔏','🔐','🔒','🔓'],
+'nature':['💐','🌸','💮','🪷','🏵️','🌹','🥀','🌺','🌻','🌼','🌷','🪻','🌱','🪴','🌲','🌳','🌴','🌵','🌾','🌿','☘️','🍀','🍁','🍂','🍃','🪹','🪺','🍄','🌰','🦀','🌍','🌎','🌏','🌕','🌖','🌗','🌘','🌑','🌒','🌓','🌔','🌙','🌚','🌛','🌜','☀️','🌝','🌞','🪐','⭐','🌟','✨','⚡','☄️','💥','🔥','🌈','☀️','🌤️','⛅','🌥️','☁️','🌦️','🌧️','⛈️','🌩️','🌨️','❄️','☃️','⛄','🌬️','💨','💧','💦','☔','☂️','🌊','🌫️'],
+'activity':['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪃','🏓','🏸','🏒','🏑','🥍','🏏','🪅','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','⛹️','🤺','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎲','♟️','🎯','🎳','🎮','🎰','🧩'],
+'symbols':['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🚭','❗','❕','❓','❔','‼️','⁉️','🔅','🔆','〽️','⚠️','🚸','🔱','⚜️','🔰','♻️','✅','🈯','💹','❇️','✳️','❎','🌐','💠','Ⓜ️','🌀','💤','🏧','🚾','♿','🅿️','🛗','🈳','🈂️','🛂','🛃','🛄','🛅','🚹','🚺','🚼','⚧️','🚻','🚮','🎦','📶','🈁','🔣','ℹ️','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','#️⃣','*️⃣','⏏️','▶️','⏸️','⏯️','⏹️','⏺️','⏭️','⏮️','⏩','⏪','⏫','⏬','◀️','🔼','🔽','➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','↕️','↔️','↪️','↩️','⤴️','⤵️','🔀','🔁','🔂','🔄','🔃','🎵','🎶','➕','➖','➗','✖️','🟰','♾️','💲','💱','™️','©️','®️','〰️','➰','➿','🔚','🔙','🔛','🔝','🔜','✔️','☑️','🔘','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','🔸','🔹','🔶','🔷','🔳','🔲','▪️','▫️','◾','◽','◼️','◻️','🟥','🟧','🟨','🟩','🟦','🟪','⬛','⬜','🟫','🔈','🔇','🔉','🔊','🔔','🔕','📣','📢','👁️‍🗨️','💬','💭','🗯️','♠️','♣️','♥️','♦️','🃏','🎴','🀄','🕐','🕑','🕒','🕓','🕔','🕕','🕖','🕗','🕘','🕙','🕚','🕛']
+};
+var emojiTabs=document.getElementById('emojiTabs');
+var emojiGrid=document.getElementById('emojiGrid');
+emojiCategories.qq=Array.from({length:350},function(_,i){return i});
+var currentEmojiTab='qq';
+function renderEmojiTabs(){emojiTabs.innerHTML=Object.keys(emojiCategories).map(function(cat){return '<button class="'+(cat===currentEmojiTab?'active':'')+'" onclick="switchEmojiTab(\''+cat+'\')">'+cat+'</button>'}).join('')}
+function switchEmojiTab(cat){currentEmojiTab=cat;renderEmojiTabs();renderEmojiGrid()}
+function qqFaceUrl(id){return 'https://qzonestyle.gtimg.cn/qzone/em/e'+encodeURIComponent(id)+'@2x.gif'}
+function renderEmojiGrid(){emojiGrid.innerHTML=emojiCategories[currentEmojiTab].map(function(e){if(currentEmojiTab==='qq')return '<span title="QQ 表情 '+e+'" onclick="insertQQFace('+e+')"><img src="'+qqFaceUrl(e)+'" alt="'+e+'" loading="lazy" onerror="this.replaceWith(document.createTextNode(this.alt))"></span>';return '<span onclick="insertEmoji(\''+e+'\')">'+e+'</span>'}).join('')}
+function insertQQFace(id){document.getElementById('messageInput').value+='<faceType=1,faceId="'+id+'",ext="">'}
+function insertEmoji(e){document.getElementById('messageInput').value+=e}
+function toggleEmoji(){var panel=document.getElementById('emojiPanel');if(panel.classList.contains('show')){panel.classList.remove('show')}else{panel.classList.add('show')}}
+renderEmojiTabs();renderEmojiGrid();
 document.getElementById('accessKey').value=token;
 document.getElementById('accessKey').addEventListener('change',function(){token=this.value;localStorage.setItem('magicKey',token);loadGroups()});
 function loadGroups(){if(!token){document.getElementById('groupList').innerHTML='<div style="padding:20px;color:#999">请输入访问码</div>';return}fetch('/qqchat/groups',{headers:{'X-Jacky-Bridge':token}}).then(function(r){return r.json()}).then(function(d){if(d.error){document.getElementById('groupList').innerHTML='<div style="padding:20px;color:#999">'+d.error+'</div>';return}groups=d.groups;nicknames=d.nicknames||{};renderGroups()}).catch(function(){document.getElementById('groupList').innerHTML='<div style="padding:20px;color:#999">连接失败</div>'})}
 function renderGroups(){var list=document.getElementById('groupList');if(!groups.length){list.innerHTML='<div style="padding:20px;color:#999">暂无聊天记录</div>';return}list.innerHTML=groups.map(function(g){var name=g.scope_id;var preview='';return '<div class="group-item'+(currentGroup===g.scope_id?' active':'')+'" onclick="selectGroup(\''+g.scope_id+'\')"><div class="group-avatar">群</div><div class="group-info"><div class="group-name">'+name+'</div><div class="group-preview">'+g.msg_count+' 条消息</div></div><div class="group-time">'+formatTime(g.last_time)+'</div></div>'}).join('')}
-function selectGroup(scopeId){currentGroup=scopeId;renderGroups();document.getElementById('chatTitle').textContent=scopeId;document.getElementById('inputArea').style.display='block';document.getElementById('memberPanel').style.display='block';loadMessages()}
-function loadMessages(){if(!currentGroup)return;fetch('/qqchat/messages?scope_id='+encodeURIComponent(currentGroup),{headers:{'X-Jacky-Bridge':token}}).then(function(r){return r.json()}).then(function(d){messages=d.messages||[];members=d.members||[];renderMessages();renderMembers()}).catch(function(){})}
-function renderMessages(){var container=document.getElementById('messages');if(!messages.length){container.innerHTML='<div class="empty-state">暂无消息</div>';return}container.innerHTML=messages.map(function(m){var isOwn=m.user_id==='web-user';var name=m.sender_name||m.user_id;var content=m.content_type==='image'?'<img src="'+m.content+'" onclick="previewImage(\''+m.content+'\')">':escapeHtml(m.content);return '<div class="message'+(isOwn?' own':'')+'"><div class="message-avatar">'+name.charAt(0)+'</div><div class="message-content"><div class="message-sender">'+escapeHtml(name)+'</div><div class="message-bubble">'+content+'</div><div class="message-time">'+formatTime(m.created_at)+'</div></div></div>'}).join('');container.scrollTop=container.scrollHeight}
-function renderMembers(){var list=document.getElementById('memberList');if(!members.length){list.innerHTML='<div style="padding:12px;color:#999;font-size:12px">暂无成员信息</div>';return}list.innerHTML=members.map(function(m){var name=nicknames[m.user_id]||m.display_name||m.user_id;return '<div class="member-item" onclick="mentionMember(\''+m.user_id+'\')"><div class="member-avatar">'+name.charAt(0)+'</div><div class="member-name">'+escapeHtml(name)+'</div><span class="nickname-btn" onclick="event.stopPropagation();openNicknameModal(\''+m.user_id+'\')">昵称</span></div>'}).join('')}
+function selectGroup(scopeId){cancelQuote();cancelSelection();closeMessageMenu();currentGroup=scopeId;renderGroups();document.getElementById('chatTitle').textContent=scopeId;document.getElementById('inputArea').style.display='block';loadMessages();if(window.innerWidth<=768){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show')}}
+function loadMessages(){if(!currentGroup)return;fetch('/qqchat/messages?scope_id='+encodeURIComponent(currentGroup),{headers:{'X-Jacky-Bridge':token}}).then(function(r){return r.json()}).then(function(d){messages=d.messages||[];members=d.members||[];groupNicknames={};members.forEach(function(m){if(m.display_name)groupNicknames[String(m.user_id).trim()]=m.display_name});renderMessages();renderMembers()}).catch(function(){})}
+function renderMessages(){var container=document.getElementById('messages');if(!messages.length){container.innerHTML='<div class="empty-state">暂无消息</div>';return}var nearBottom=container.scrollHeight-container.scrollTop-container.clientHeight<80;container.innerHTML=messages.map(function(m){var isOwn=m.user_id==='web-user';var name=m.sender_name||m.user_id;var content=m.recalled?'<span class="recalled">消息已撤回</span>':m.content_type==='image'?'<img src="'+escapeHtml(m.content)+'" data-preview="'+escapeHtml(m.content)+'">':renderQQContent(m.content);var actions=m.recalled?'':'<div class="message-actions"><button data-action="forward" data-id="'+m.id+'">转发</button><button data-action="recall" data-id="'+m.id+'" '+(!m.qq_message_id?'disabled':'')+'>撤回</button><button data-action="reaction" data-id="'+m.id+'" '+(m.scope_type!=='channel'||!m.qq_message_id?'disabled title="QQ 群未开放贴表情接口；仅支持频道新消息"':'')+'>贴表情</button>'+(m.scope_type==='channel'?'<button data-action="unreaction" data-id="'+m.id+'">取消贴表情</button>':'')+'</div>';return '<div class="message'+(isOwn?' own':'')+'"><div class="message-avatar">'+escapeHtml(name.charAt(0))+'</div><div class="message-content"><div class="message-sender">'+escapeHtml(name)+'</div><div class="message-bubble">'+content+'</div><div class="message-time">'+formatTime(m.created_at)+'</div>'+actions+'</div></div>'}).join('');if(nearBottom)container.scrollTop=container.scrollHeight}
+var messageContainer=document.getElementById('messages');
+function decorateMessages(){var rows=messageContainer.querySelectorAll('.message');rows.forEach(function(row,index){var message=messages[index];if(!message)return;row.dataset.messageId=message.id;row.classList.toggle('selected',selectedMessageIds.has(message.id));if(message.reply_to){var quoted=messages.find(function(item){return item.id===message.reply_to});var preview=document.createElement('div');preview.className='quoted-message';preview.textContent=quoted?(quoted.sender_name+': '+(quoted.recalled?'消息已撤回':quoted.content_type==='image'?'[图片]':quoted.content.slice(0,100))):'引用消息';row.querySelector('.message-bubble').prepend(preview)}});updateSelectionBar()}
+var originalRenderMessages=renderMessages,lastMessageSignature='';renderMessages=function(){var signature=currentGroup+JSON.stringify(messages);if(signature===lastMessageSignature)return;lastMessageSignature=signature;originalRenderMessages();messageContainer.querySelectorAll('.message').forEach(function(row,index){var message=messages[index];if(!message||message.recalled)return;var image=row.querySelector('.message-bubble img[data-preview]');if(image){var url=message.media_url||message.content;image.src=url;image.dataset.preview=url;image.className='chat-media';image.alt='图片 / 收藏表情';image.referrerPolicy='no-referrer';image.onerror=function(){var placeholder=document.createElement('span');placeholder.className='media-failed';placeholder.textContent='图片资源已失效或下载失败，请重新发送';image.replaceWith(placeholder)}}});decorateMessages()};
+messageContainer.addEventListener('click',function(event){if(suppressClick){suppressClick=false;event.preventDefault();return}var row=event.target.closest('[data-message-id]');if(selectionMode&&row){toggleSelected(Number(row.dataset.messageId));return}var image=event.target.closest('[data-preview]');if(image)previewImage(image.dataset.preview)});
+messageContainer.addEventListener('contextmenu',function(event){var row=event.target.closest('[data-message-id]');if(row){event.preventDefault();openMessageMenu(Number(row.dataset.messageId),event.clientX,event.clientY)}});
+messageContainer.addEventListener('pointerdown',function(event){if(event.button!==0)return;var row=event.target.closest('[data-message-id]');if(!row)return;var x=event.clientX,y=event.clientY;pressX=x;pressY=y;pressTimer=setTimeout(function(){suppressClick=true;openMessageMenu(Number(row.dataset.messageId),x,y);pressTimer=null},550)});
+['pointerup','pointercancel','pointermove'].forEach(function(name){messageContainer.addEventListener(name,function(event){if(name==='pointermove'&&Math.hypot(event.clientX-pressX,event.clientY-pressY)<12)return;if(pressTimer){clearTimeout(pressTimer);pressTimer=null}})});
+function closeMessageMenu(){var menu=document.getElementById('messageMenu');if(menu)menu.remove()}
+function openMessageMenu(id,x,y){closeMessageMenu();var message=messages.find(function(item){return item.id===id});if(!message)return;menuMessageId=id;var menu=document.createElement('div');menu.id='messageMenu';menu.className='message-menu';var canQuote=message.scope_type==='channel'?!!message.qq_message_id:!!message.qq_ref_idx;var entries=[['引用回复','quote',!!canQuote&&!message.recalled],['转发','forward',!message.recalled],['多选 / 合并转发','select',!message.recalled],['撤回','recall',!!message.qq_message_id&&!message.recalled],['贴表情'+(message.scope_type!=='channel'?'（仅频道）':''),'reaction',message.scope_type==='channel'&&!!message.qq_message_id&&!message.recalled],['取消贴表情','unreaction',message.scope_type==='channel'&&!!message.qq_message_id&&!message.recalled]];entries.forEach(function(entry){var button=document.createElement('button');button.textContent=entry[0];button.disabled=!entry[2];button.dataset.id=id;button.dataset.action=entry[1];button.onclick=function(){closeMessageMenu();if(entry[1]==='quote'){replyTo=id;document.getElementById('quoteBar').hidden=false;document.getElementById('quoteText').textContent='引用 '+message.sender_name+': '+(message.content_type==='image'?'[图片]':message.content.slice(0,100));document.getElementById('messageInput').focus()}else if(entry[1]==='select'){selectionMode=true;selectedMessageIds.add(id);decorateMessages()}else messageAction(button)};menu.append(button)});document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,window.innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))+'px'}
+document.addEventListener('pointerdown',function(event){if(!event.target.closest('.message-menu'))closeMessageMenu()});
+function cancelQuote(){replyTo=null;document.getElementById('quoteBar').hidden=true}
+function updateSelectionBar(){document.getElementById('batchBar').hidden=!selectionMode;document.getElementById('selectionCount').textContent='已选 '+selectedMessageIds.size+' 条';document.getElementById('mergeButton').disabled=mergeBusy||!selectedMessageIds.size}
+function toggleSelected(id){var message=messages.find(function(item){return item.id===id});if(!message||message.recalled)return;if(selectedMessageIds.has(id))selectedMessageIds.delete(id);else if(selectedMessageIds.size<30)selectedMessageIds.add(id);else alert('最多选择 30 条消息');decorateMessages()}
+function selectAllMessages(){selectedMessageIds=new Set(messages.filter(function(message){return !message.recalled}).slice(0,30).map(function(message){return message.id}));decorateMessages()}
+function cancelSelection(){selectionMode=false;selectedMessageIds.clear();decorateMessages()}
+function chooseTarget(){var options=groups.map(function(g,i){return (i+1)+'. '+g.scope_id}).join('\n');var selected=prompt('选择目标群 / 频道（输入序号）：\n'+options);if(selected===null)return null;var index=Number(selected)-1;if(!Number.isInteger(index)||!groups[index]){alert('请选择有效序号');return null}return groups[index].scope_id}
+async function mergeForward(){if(mergeBusy||!selectedMessageIds.size)return;var target=chooseTarget();if(!target)return;mergeBusy=true;updateSelectionBar();try{var response=await fetch('/qqchat/merge_forward',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':token},body:JSON.stringify({scope_id:currentGroup,target_scope:target,ids:Array.from(selectedMessageIds)})});var data=await response.json();if(!response.ok)throw new Error(data.error||'合并转发失败');cancelSelection();loadMessages();alert('已合并转发 '+data.count+' 条消息（聊天记录图片）')}catch(error){alert(error.message)}finally{mergeBusy=false;updateSelectionBar()}}
+async function messageAction(button){var action=button.dataset.action;var payload={action:action,id:Number(button.dataset.id),scope_id:currentGroup};if(action==='forward'){var options=groups.map(function(g,i){return (i+1)+'. '+g.scope_id}).join('\n');var selected=prompt('转发内容到目标群 / 频道（输入序号）：\n'+options);if(selected===null)return;var index=Number(selected)-1;if(!Number.isInteger(index)||!groups[index]){alert('请选择有效序号');return}payload.target_scope=groups[index].scope_id}else if(action==='reaction'||action==='unreaction'){var emoji=prompt('输入 QQ 表情编号（例如 76：赞）。编号可在表情面板中查看。','76');if(emoji===null)return;payload.emoji_id=emoji.trim();payload.emoji_type=1}else if(action==='recall'&&!confirm('撤回这条 QQ 消息？群消息须在 2 分钟内，撤回别人消息须为群管理员。'))return;button.disabled=true;try{var response=await fetch('/qqchat/action',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':token},body:JSON.stringify(payload)});var data=await response.json();if(!response.ok)throw new Error(data.error||'操作失败');loadMessages();if(action!=='recall')alert('操作成功')}catch(error){alert(error.message)}finally{button.disabled=false}}
+function faceImage(id,label){if(!/^\d+$/.test(id))return escapeHtml('['+label+']');return '<span class="qq-face" title="'+escapeHtml(label+' · 编号 '+id)+'"><img class="qq-face-img" src="'+qqFaceUrl(id)+'" alt="'+escapeHtml('['+label+' #'+id+']')+'" loading="lazy" onerror="this.replaceWith(document.createTextNode(this.alt))"></span>'}
+function renderQQContent(raw){var text=escapeHtml(raw);text=text.replace(/&lt;@!?([^&]+)&gt;/g,function(match,userId){userId=userId.trim();var name=groupNicknames[userId];return '@'+escapeHtml(name||'未知用户')});text=text.replace(/&lt;faceType=(\d+),faceId=&quot;(.*?)&quot;,ext=&quot;(.*?)&quot;&gt;/g,function(match,type,id,ext){var label='QQ表情';if(ext){try{var decoded=decodeURIComponent(escape(atob(ext)));var data=JSON.parse(decoded);if(data.text)label=data.text}catch(e){}}if(type==='1')return faceImage(id,label);if(type==='4')return '<span class="sticker-placeholder" title="收藏表情图片由 QQ 附件提供；未提供图片时无法还原">'+escapeHtml(label==='QQ表情'?'[收藏表情]':'['+label+']')+'</span>';return '<span class="sticker-placeholder">'+escapeHtml('['+label+(id?' #'+id:'')+']')+'</span>'});return text.replace(/&lt;emoji:(\d+)&gt;|\[CQ:face,id=(\d+)\]/g,function(match,a,b){return faceImage(a||b,'QQ表情')})}
+function renderMembers(){var list=document.getElementById('memberList');if(!members.length){list.innerHTML='<div style="padding:12px;color:#999;font-size:12px">暂无成员信息</div>';return}list.innerHTML=members.map(function(m){var name=m.display_name||nicknames[m.user_id]||m.user_id;return '<div class="member-item" onclick="mentionMember(\''+m.user_id+'\')"><div class="member-avatar">'+escapeHtml(name.charAt(0))+'</div><div class="member-name">'+escapeHtml(name)+'</div><span class="nickname-btn" onclick="event.stopPropagation();openNicknameModal(\''+m.user_id+'\')">昵称</span></div>'}).join('')}
 function mentionMember(userId){var name=nicknames[userId]||userId;document.getElementById('messageInput').value+='@'+name+' ';document.getElementById('messageInput').focus()}
 function openNicknameModal(userId){document.getElementById('nicknameUserId').textContent='ID: '+userId;document.getElementById('nicknameInput').value=nicknames[userId]||'';document.getElementById('nicknameModal').classList.add('show');document.getElementById('nicknameInput').focus()}
 function closeNicknameModal(){document.getElementById('nicknameModal').classList.remove('show')}
 function saveNickname(){var userId=document.getElementById('nicknameUserId').textContent.replace('ID: ','');var nickname=document.getElementById('nicknameInput').value.trim();if(!nickname){alert('请输入昵称');return}fetch('/qqchat/nickname',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':token},body:JSON.stringify({userId:userId,nickname:nickname})}).then(function(r){return r.json()}).then(function(d){if(d.ok){nicknames[userId]=nickname;closeNicknameModal();renderMembers()}else{alert(d.error||'保存失败')}})}
-function sendMessage(){var input=document.getElementById('messageInput');var content=input.value.trim();if(!content||!currentGroup)return;fetch('/qqchat/send',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':token},body:JSON.stringify({scope_id:currentGroup,userId:'web-user',senderName:'我',content:content,contentType:'text'})}).then(function(r){return r.json()}).then(function(d){if(d.ok){input.value='';loadMessages()}else{alert(d.error||'发送失败')}})}
-function sendImage(input){var file=input.files[0];if(!file||!currentGroup)return;var form=new FormData();form.append('image',file);form.append('scope_id',currentGroup);fetch('/qqchat/send_image',{method:'POST',headers:{'X-Jacky-Bridge':token},body:form}).then(function(r){return r.json()}).then(function(d){if(d.ok){loadMessages()}else{alert(d.error||'发送失败')}});input.value=''}
+function sendMessage(){var input=document.getElementById('messageInput');var content=input.value.trim();if(!content||!currentGroup)return;fetch('/qqchat/send',{method:'POST',headers:{'content-type':'application/json','X-Jacky-Bridge':token},body:JSON.stringify({scope_id:currentGroup,userId:'web-user',senderName:'我',content:content,contentType:'text',reply_to:replyTo})}).then(function(r){return r.json()}).then(function(d){if(d.ok){input.value='';cancelQuote();loadMessages()}else{alert(d.error||'发送失败')}})}
+function sendImage(input){var file=input.files[0];if(!file||!currentGroup)return;var form=new FormData();form.append('image',file);form.append('scope_id',currentGroup);if(replyTo!==null)form.append('reply_to',String(replyTo));fetch('/qqchat/send_image',{method:'POST',headers:{'X-Jacky-Bridge':token},body:form}).then(function(r){return r.json()}).then(function(d){if(d.ok){cancelQuote();loadMessages()}else{alert(d.error||'发送失败')}});input.value=''}
 function handleKeyDown(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}
 function previewImage(src){document.getElementById('previewImg').src=src;document.getElementById('imagePreview').classList.add('show')}
-function escapeHtml(text){var div=document.createElement('div');div.textContent=text;return div.innerHTML}
+function escapeHtml(text){var div=document.createElement('div');div.textContent=String(text||'');return div.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function formatTime(iso){if(!iso)return '';var d=new Date(iso);return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('show')}
+function toggleMembers(){document.getElementById('memberPanel').classList.toggle('open');document.getElementById('overlay').classList.toggle('show')}
+function closePanels(){document.getElementById('sidebar').classList.remove('open');document.getElementById('memberPanel').classList.remove('open');document.getElementById('overlay').classList.remove('show')}
 loadGroups();setInterval(function(){if(currentGroup){loadMessages()}else{loadGroups()}},5000);
 </script>
 </body>
@@ -1342,10 +1436,21 @@ def initialize_database():
                 created_at TEXT NOT NULL
             )
         """)
+        chat_columns = {row[1] for row in db.execute("PRAGMA table_info(chat_messages)")}
+        for column, definition in (
+            ("qq_message_id", "TEXT NOT NULL DEFAULT ''"),
+            ("scope_type", "TEXT NOT NULL DEFAULT 'group'"),
+            ("recalled", "INTEGER NOT NULL DEFAULT 0"),
+            ("qq_ref_idx", "TEXT NOT NULL DEFAULT ''"),
+            ("reply_to", "INTEGER"),
+        ):
+            if column not in chat_columns:
+                db.execute(f"ALTER TABLE chat_messages ADD COLUMN {column} {definition}")
 
 
 FEATURE_TOGGLES = [
     ("forward_reply", "转发自动回复"),
+    ("auto_reply", "自定义自动回复"),
     ("ai_chat", "AI 聊天"),
     ("magic", "Magic 群发"),
     ("draw", "抽卡"),
@@ -1407,8 +1512,59 @@ def set_setting(key, enabled):
         )
 
 
+def get_forward_keywords():
+    raw = _settings_cache.get("forward_keywords")
+    if raw is None:
+        return FORWARD_KEYWORDS
+    try:
+        keywords = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return FORWARD_KEYWORDS
+    return tuple(item for item in keywords if isinstance(item, str) and item)
+
+
+def set_forward_keywords(keywords):
+    normalized = tuple(dict.fromkeys(
+        item.strip() for item in keywords if isinstance(item, str) and item.strip()
+    ))
+    if not normalized:
+        raise ValueError("关键词列表不能为空")
+    if len(normalized) > 100 or any(len(item) > 50 for item in normalized):
+        raise ValueError("最多保存 100 个关键词，每个关键词不能超过 50 个字符")
+    value = json.dumps(normalized, ensure_ascii=False)
+    _settings_cache["forward_keywords"] = value
+    with connect_db() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value) VALUES (?, ?)",
+            ("forward_keywords", value),
+        )
+
+
 def all_settings():
     return {key: get_setting(key, True) for key, _ in FEATURE_TOGGLES}
+
+
+def get_auto_reply_rules():
+    raw = _settings_cache.get("auto_reply_rules")
+    if raw is None:
+        return normalize_rules([{
+            "id": "default-taste", "name": "趣味生煎", "reply": "已品尝",
+            "keywords": ["趣味生煎"],
+        }])
+    return normalize_rules(json.loads(raw))
+
+
+def set_auto_reply_rules(rules):
+    normalized = normalize_rules(rules)
+    value = json.dumps(normalized, ensure_ascii=False)
+    with connect_db() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value) VALUES (?, ?)",
+            ("auto_reply_rules", value),
+        )
+    _settings_cache["auto_reply_rules"] = value
+    auto_reply_cooldowns.clear()
+    return normalized
 
 
 def parse_command(content):
@@ -1741,11 +1897,11 @@ def find_roster_profile(scope_id, identifier):
     }, roster
 
 
-def save_chat_message(scope_id, user_id, sender_name, content, content_type="text"):
+def save_chat_message(scope_id, user_id, sender_name, content, content_type="text", qq_message_id="", scope_type="group", qq_ref_idx="", reply_to=None):
     with connect_db() as db:
         db.execute(
-            "INSERT INTO chat_messages (scope_id, user_id, sender_name, content_type, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (scope_id, user_id, sender_name[:50], content_type, content[:2000], datetime.now().isoformat()),
+            "INSERT INTO chat_messages (scope_id, user_id, sender_name, content_type, content, created_at, qq_message_id, scope_type, qq_ref_idx, reply_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (scope_id, user_id, sender_name[:50], content_type, content[:2000], datetime.now().isoformat(), str(qq_message_id or ""), scope_type, qq_ref_idx, reply_to),
         )
 
 
@@ -1758,6 +1914,26 @@ def get_chat_messages(scope_id, limit=100):
                 (scope_id, limit),
             ).fetchall()
         ][::-1]
+
+
+def track_bot_replies(message_class, scope_attribute, scope_type):
+    original_reply = message_class.reply
+
+    async def reply_with_history(message, **kwargs):
+        result = await original_reply(message, **kwargs)
+        scope_id = getattr(message, scope_attribute, None)
+        content = kwargs.get("content") or kwargs.get("image")
+        if scope_id and content and isinstance(result, dict):
+            save_chat_message(str(scope_id), "web-user", "机器人", content,
+                              "image" if kwargs.get("image") else "text",
+                              result.get("id", ""), scope_type, (result.get("ext_info") or {}).get("ref_idx", ""))
+        return result
+
+    message_class.reply = reply_with_history
+
+
+track_bot_replies(GroupMessage, "group_openid", "group")
+track_bot_replies(Message, "channel_id", "channel")
 
 
 def get_all_chat_groups():
@@ -3734,6 +3910,20 @@ def clean_ai_answer(text):
     return text.strip()
 
 
+def needs_image_render(text):
+    if re.search(r'```[\s\S]*?```', text):
+        return True
+    if re.search(r'\$\$[\s\S]*?\$\$', text):
+        return True
+    if re.search(r'\\\[[\s\S]*?\\\]', text):
+        return True
+    if re.search(r'\\\([\s\S]*?\\\)', text):
+        return True
+    if len(text) > 800:
+        return True
+    return False
+
+
 ACHIEVEMENTS = [
     ("first_draw", "第一次心动", "完成第一次抽卡"),
     ("draw_10", "小小收藏家", "累计抽卡 10 次"),
@@ -4360,7 +4550,9 @@ class TinyThingsBot(botpy.Client):
                     "toggles": [
                         {"key": key, "label": label, "value": get_setting(key, True)}
                         for key, label in FEATURE_TOGGLES
-                    ]
+                    ],
+                    "forward_keywords": get_forward_keywords(),
+                    "auto_reply_rules": get_auto_reply_rules(),
                 }
             )
 
@@ -4376,11 +4568,36 @@ class TinyThingsBot(botpy.Client):
                 {"ok": True, "key": key, "value": get_setting(key, True)}
             )
 
+        async def settings_keywords_update(request):
+            if request.headers.get("X-Jacky-Bridge") != token:
+                return web.json_response({"error": "unauthorized"}, status=401)
+            payload = await request.json()
+            keywords = payload.get("keywords")
+            if not isinstance(keywords, list):
+                return web.json_response({"error": "关键词格式不正确"}, status=400)
+            try:
+                set_forward_keywords(keywords)
+            except ValueError as error:
+                return web.json_response({"error": str(error)}, status=400)
+            return web.json_response({"ok": True, "keywords": get_forward_keywords()})
+
         async def settings_page(request):
             return web.Response(
-                text=SETTINGS_PAGE,
+                text=(BASE_DIR / "data" / "settings.html").read_text(encoding="utf-8"),
                 content_type="text/html",
             )
+
+        async def settings_replies_update(request):
+            if request.headers.get("X-Jacky-Bridge") != token:
+                return web.json_response({"error": "unauthorized"}, status=401)
+            try:
+                payload = await request.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("请求格式不正确")
+                rules = set_auto_reply_rules(payload.get("rules"))
+            except (ValueError, TypeError) as error:
+                return web.json_response({"error": str(error)}, status=400)
+            return web.json_response({"ok": True, "rules": rules})
 
         async def qqchat_page(request):
             return web.Response(
@@ -4393,7 +4610,9 @@ class TinyThingsBot(botpy.Client):
                 return web.json_response({"error": "unauthorized"}, status=401)
             groups = get_all_chat_groups()
             nicknames = get_all_qq_nicknames()
-            return web.json_response({"groups": groups, "nicknames": nicknames})
+            response = web.json_response({"groups": groups, "nicknames": nicknames})
+            response.set_cookie("qqchat_access", token, httponly=True, samesite="Strict", path="/qqchat", max_age=86400)
+            return response
 
         async def qqchat_messages(request):
             if request.headers.get("X-Jacky-Bridge") != token:
@@ -4402,8 +4621,30 @@ class TinyThingsBot(botpy.Client):
             if not scope_id:
                 return web.json_response({"error": "missing scope_id"}, status=400)
             messages = get_chat_messages(scope_id)
+            for item in messages:
+                if item["content_type"] == "image":
+                    item["media_url"] = f"/qqchat/media/{item['id']}"
             members = get_group_members(scope_id)
             return web.json_response({"messages": messages, "members": members})
+
+        async def qqchat_media(request):
+            access = request.cookies.get("qqchat_access")
+            if access != token:
+                return web.Response(status=401)
+            with connect_db() as db:
+                row = db.execute("SELECT * FROM chat_messages WHERE id=?", (int(request.match_info["id"]),)).fetchone()
+            if not row or row["content_type"] != "image" or row["recalled"]:
+                return web.Response(status=404)
+            url = row["content"]
+            try:
+                if not url.startswith("/uploads/"):
+                    url = await cache_image(url, BASE_DIR)
+                    with connect_db() as db:
+                        db.execute("UPDATE chat_messages SET content=? WHERE id=?", (url, row["id"]))
+                filename = Path(url).name
+                return web.FileResponse(BASE_DIR / "magic-uploads" / filename)
+            except Exception:
+                return web.Response(status=410, text="图片资源已失效或无法下载，请重新发送")
 
         async def qqchat_send(request):
             if request.headers.get("X-Jacky-Bridge") != token:
@@ -4416,12 +4657,157 @@ class TinyThingsBot(botpy.Client):
             content_type = str(payload.get("contentType", "text"))
             if not scope_id or not content:
                 return web.json_response({"error": "missing fields"}, status=400)
-            if content_type == "text":
-                await self.api.post_group_message(
-                    group_openid=scope_id,
-                    content=content,
-                )
-            save_chat_message(scope_id, user_id, sender_name, content, content_type)
+            if content_type != "text":
+                return web.json_response({"error": "请使用图片上传接口"}, status=400)
+            with connect_db() as db:
+                scope_row = db.execute("SELECT scope_type FROM chat_messages WHERE scope_id=? ORDER BY id DESC LIMIT 1", (scope_id,)).fetchone()
+            scope_type = scope_row["scope_type"] if scope_row else "group"
+            reply_to = payload.get("reply_to")
+            reference = {}
+            if reply_to is not None:
+                if type(reply_to) is not int:
+                    return web.json_response({"error": "引用消息编号无效"}, status=400)
+                with connect_db() as db:
+                    quoted = db.execute("SELECT * FROM chat_messages WHERE id=? AND scope_id=?", (reply_to, scope_id)).fetchone()
+                if not quoted or quoted["recalled"]:
+                    return web.json_response({"error": "引用消息已撤回或不存在"}, status=400)
+                ref_id = quoted["qq_message_id"] if scope_type == "channel" else quoted["qq_ref_idx"]
+                if not ref_id:
+                    return web.json_response({"error": "这条旧消息没有 QQ 引用索引，请选择更新后收到的新消息"}, status=400)
+                reference = {"message_reference": {"message_id": ref_id}}
+            try:
+                if scope_type == "channel":
+                    result = await self.api.post_message(channel_id=scope_id, content=channel_content(content), **reference)
+                elif FACE_PATTERN.search(content):
+                    result, image_url = await send_rendered_records(request, scope_id, scope_type, [{"sender_name": "我", "content": content, "content_type": "text"}], merged=False, reference=reference)
+                    save_chat_message(scope_id, "web-user", "我", image_url, "image", result.get("id", ""), scope_type, (result.get("ext_info") or {}).get("ref_idx", ""), reply_to)
+                    return web.json_response({"ok": True})
+                else:
+                    result = await self.api.post_group_message(group_openid=scope_id, content=content, **reference)
+            except Exception as error:
+                return web.json_response({"error": f"QQ 发送失败：{error}"}, status=502)
+            save_chat_message(scope_id, "web-user", "我", content, content_type, result.get("id", ""), scope_type, (result.get("ext_info") or {}).get("ref_idx", ""), reply_to)
+            return web.json_response({"ok": True})
+
+        async def send_rendered_records(request, target, kind, records, merged=True, reference=None):
+            records = [dict(record) for record in records]
+            for record in records:
+                if record["content_type"] == "image" and record["content"].startswith("/uploads/"):
+                    record["content"] = f"http://{request.host}{record['content']}"
+            image = await render_chat_image(records, merged=merged)
+            upload_dir = BASE_DIR / "magic-uploads"
+            upload_dir.mkdir(exist_ok=True)
+            filename = f"{uuid.uuid4().hex}.png"
+            (upload_dir / filename).write_bytes(image)
+            image_url = f"http://{request.host}/uploads/{filename}"
+            if kind == "channel":
+                result = await self.api.post_message(channel_id=target, image=image_url, **(reference or {}))
+            else:
+                media = await self.api.post_group_file(group_openid=target, file_type=1, url=image_url, srv_send_msg=False)
+                result = await self.api.post_group_message(group_openid=target, msg_type=7, media={"file_info": media["file_info"]}, **(reference or {}))
+            return result, image_url
+
+        async def qqchat_merge_forward(request):
+            if request.headers.get("X-Jacky-Bridge") != token:
+                return web.json_response({"error": "unauthorized"}, status=401)
+            try:
+                payload = await request.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("请求格式不正确")
+                ids = payload.get("ids")
+                if not isinstance(ids, list) or not 1 <= len(ids) <= 30 or any(type(value) is not int for value in ids) or len(set(ids)) != len(ids):
+                    raise ValueError("请选择 1–30 条不同的消息")
+                target = payload.get("target_scope")
+                if not isinstance(target, str) or not target:
+                    raise ValueError("请选择目标会话")
+                with connect_db() as db:
+                    records = [dict(row) for row in db.execute(
+                        f"SELECT * FROM chat_messages WHERE scope_id=? AND id IN ({','.join('?' for _ in ids)}) ORDER BY id",
+                        (payload.get("scope_id"), *ids),
+                    ).fetchall()]
+                    target_row = db.execute("SELECT scope_type FROM chat_messages WHERE scope_id=? ORDER BY id DESC LIMIT 1", (target,)).fetchone()
+                if len(records) != len(ids) or any(record["recalled"] for record in records):
+                    raise ValueError("选中的消息已撤回或不存在，请重新选择")
+                if not target_row:
+                    raise ValueError("目标会话不存在")
+                kind = target_row["scope_type"]
+                result, image_url = await send_rendered_records(request, target, kind, records)
+                save_chat_message(target, "web-user", "我", image_url, "image", result.get("id", ""), kind, (result.get("ext_info") or {}).get("ref_idx", ""))
+            except (ValueError, TypeError) as error:
+                return web.json_response({"error": str(error)}, status=400)
+            except Exception as error:
+                return web.json_response({"error": f"合并转发失败：{error}"}, status=502)
+            return web.json_response({"ok": True, "count": len(records), "format": "image"})
+
+        async def qqchat_action(request):
+            if request.headers.get("X-Jacky-Bridge") != token:
+                return web.json_response({"error": "unauthorized"}, status=401)
+            try:
+                payload = await request.json()
+                if not isinstance(payload, dict) or type(payload.get("id")) is not int:
+                    raise ValueError("消息编号格式不正确")
+                with connect_db() as db:
+                    row = db.execute("SELECT * FROM chat_messages WHERE id=? AND scope_id=?", (payload["id"], payload.get("scope_id"))).fetchone()
+                if not row:
+                    return web.json_response({"error": "消息不存在"}, status=404)
+                message = dict(row)
+                if message["recalled"]:
+                    raise ValueError("消息已撤回")
+                action = payload.get("action")
+                scope = message["scope_id"]
+                message_id = message["qq_message_id"]
+                if action in {"recall", "reaction", "unreaction"} and not message_id:
+                    raise ValueError("旧聊天记录没有 QQ 消息 ID，请操作更新后的新消息")
+                if action == "recall":
+                    if message["scope_type"] == "channel":
+                        await self.api.recall_message(channel_id=scope, message_id=message_id)
+                    else:
+                        await self.api._http.request(Route("DELETE", "/v2/groups/{group_openid}/messages/{message_id}", group_openid=scope, message_id=message_id))
+                    with connect_db() as db:
+                        db.execute("UPDATE chat_messages SET recalled=1 WHERE scope_id=? AND qq_message_id=?", (scope, message_id))
+                elif action in {"reaction", "unreaction"}:
+                    if message["scope_type"] != "channel":
+                        raise ValueError("QQ 官方仅开放频道消息贴表情，普通 QQ 群暂不支持")
+                    emoji_id = str(payload.get("emoji_id", ""))
+                    emoji_type = payload.get("emoji_type", 1)
+                    if emoji_type not in (1, 2) or not emoji_id.isdigit() or len(emoji_id) > 10:
+                        raise ValueError("表情编号无效")
+                    operation = self.api.put_reaction if action == "reaction" else self.api.delete_reaction
+                    await operation(channel_id=scope, message_id=message_id, emoji_type=emoji_type, emoji_id=emoji_id)
+                elif action == "forward":
+                    target = payload.get("target_scope")
+                    if not isinstance(target, str) or not target:
+                        raise ValueError("请选择目标群 / 频道")
+                    with connect_db() as db:
+                        target_row = db.execute("SELECT scope_type FROM chat_messages WHERE scope_id=? ORDER BY id DESC LIMIT 1", (target,)).fetchone()
+                    if not target_row:
+                        raise ValueError("目标会话不存在")
+                    kind = target_row["scope_type"]
+                    if message["content_type"] == "image":
+                        if message["content"].startswith("/uploads/"):
+                            message["content"] = f"http://{request.host}{message['content']}"
+                        if kind == "channel":
+                            result = await self.api.post_message(channel_id=target, image=message["content"])
+                        else:
+                            media = await self.api.post_group_file(group_openid=target, file_type=1, url=message["content"], srv_send_msg=False)
+                            result = await self.api.post_group_message(group_openid=target, msg_type=7, media={"file_info": media["file_info"]})
+                        content = message["content"]
+                    else:
+                        content = f"【转发 · {message['sender_name']}】\n{message['content']}"
+                        if kind == "channel":
+                            result = await self.api.post_message(channel_id=target, content=channel_content(content))
+                        elif FACE_PATTERN.search(content):
+                            result, content = await send_rendered_records(request, target, kind, [{**message, "content": content}], merged=False)
+                            message["content_type"] = "image"
+                        else:
+                            result = await self.api.post_group_message(group_openid=target, content=content)
+                    save_chat_message(target, "web-user", "我", content, message["content_type"], result.get("id", ""), kind, (result.get("ext_info") or {}).get("ref_idx", ""))
+                else:
+                    raise ValueError("未知消息操作")
+            except (ValueError, TypeError) as error:
+                return web.json_response({"error": str(error)}, status=400)
+            except Exception as error:
+                return web.json_response({"error": f"QQ 操作失败：{error}"}, status=502)
             return web.json_response({"ok": True})
 
         async def qqchat_send_image(request):
@@ -4466,13 +4852,34 @@ class TinyThingsBot(botpy.Client):
                 scope_id = await scope_id_field.text()
             if not scope_id:
                 return web.json_response({"error": "missing scope_id"}, status=400)
-            await self.api.post_group_file(
-                group_openid=scope_id,
-                file_type=1,
-                url=public_url,
-                srv_send_msg=True,
-            )
-            save_chat_message(scope_id, user_id, sender_name, public_url, "image")
+            with connect_db() as db:
+                scope_row = db.execute("SELECT scope_type FROM chat_messages WHERE scope_id=? ORDER BY id DESC LIMIT 1", (scope_id,)).fetchone()
+            scope_type = scope_row["scope_type"] if scope_row else "group"
+            reference = {}
+            reply_to = None
+            reply_field = await reader.next()
+            if reply_field and reply_field.name == "reply_to":
+                try:
+                    reply_to = int(await reply_field.text())
+                except ValueError:
+                    return web.json_response({"error": "引用消息编号无效"}, status=400)
+                with connect_db() as db:
+                    quoted = db.execute("SELECT * FROM chat_messages WHERE id=? AND scope_id=?", (reply_to, scope_id)).fetchone()
+                if not quoted or quoted["recalled"]:
+                    return web.json_response({"error": "引用消息已撤回或不存在"}, status=400)
+                ref_id = quoted["qq_message_id"] if scope_type == "channel" else quoted["qq_ref_idx"]
+                if not ref_id:
+                    return web.json_response({"error": "这条消息没有 QQ 引用索引"}, status=400)
+                reference = {"message_reference": {"message_id": ref_id}}
+            try:
+                if scope_type == "channel":
+                    result = await self.api.post_message(channel_id=scope_id, image=public_url, **reference)
+                else:
+                    media = await self.api.post_group_file(group_openid=scope_id, file_type=1, url=public_url, srv_send_msg=False)
+                    result = await self.api.post_group_message(group_openid=scope_id, msg_type=7, media={"file_info": media["file_info"]}, **reference)
+            except Exception as error:
+                return web.json_response({"error": f"QQ 图片发送失败：{error}"}, status=502)
+            save_chat_message(scope_id, user_id, sender_name, public_url, "image", result.get("id", ""), scope_type, (result.get("ext_info") or {}).get("ref_idx", ""), reply_to)
             return web.json_response({"ok": True, "url": public_url})
 
         async def qqchat_set_nickname(request):
@@ -4491,6 +4898,8 @@ class TinyThingsBot(botpy.Client):
         app.router.add_get("/settings", settings_page)
         app.router.add_get("/settings/data", settings_data)
         app.router.add_post("/settings", settings_update)
+        app.router.add_post("/settings/keywords", settings_keywords_update)
+        app.router.add_post("/settings/replies", settings_replies_update)
         app.router.add_post("/magic", magic)
         app.router.add_post("/magic/send", magic)
         app.router.add_post("/magic/image", magic_image)
@@ -4504,6 +4913,9 @@ class TinyThingsBot(botpy.Client):
         app.router.add_post("/qqchat/send", qqchat_send)
         app.router.add_post("/qqchat/send_image", qqchat_send_image)
         app.router.add_post("/qqchat/nickname", qqchat_set_nickname)
+        app.router.add_post("/qqchat/action", qqchat_action)
+        app.router.add_post("/qqchat/merge_forward", qqchat_merge_forward)
+        app.router.add_get("/qqchat/media/{id:\\d+}", qqchat_media)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", 8787)
@@ -4550,6 +4962,23 @@ class TinyThingsBot(botpy.Client):
             await message.reply(
                 content="⚠️ 暂时无法获取答案，游戏仍在进行中。", msg_seq=2
             )
+
+    async def _reply_with_image(self, message, scope_id, answer):
+        if not needs_image_render(answer):
+            await message.reply(content=answer)
+            return
+        scope_type = "channel" if getattr(message, "channel_id", None) else "group"
+        image_bytes = await asyncio.to_thread(render_answer_image, answer)
+        upload_dir = BASE_DIR / "magic-uploads"
+        upload_dir.mkdir(exist_ok=True)
+        filename = f"{uuid.uuid4().hex}.png"
+        (upload_dir / filename).write_bytes(image_bytes)
+        image_url = f"http://localhost:8787/uploads/{filename}"
+        if scope_type == "channel":
+            await self.api.post_message(channel_id=scope_id, image=image_url)
+        else:
+            media = await self.api.post_group_file(group_openid=scope_id, file_type=1, url=image_url, srv_send_msg=False)
+            await self.api.post_group_message(group_openid=scope_id, msg_type=7, media={"file_info": media["file_info"]})
 
     async def handle_command_message(
         self, message, scope_id=None, user_id=None, mentioned=False
@@ -4625,17 +5054,43 @@ class TinyThingsBot(botpy.Client):
             save_user_name(scope_id, user_id, display_name, overwrite=False)
 
         message_text = (message.content or "").strip()
-        if message_text and not message_text.startswith("/"):
-            save_chat_message(scope_id, user_id, display_name or user_id, message_text, "text")
+        scope_type = "channel" if getattr(message, "channel_id", None) else "group"
+        chat_scope_id = str(message.channel_id) if scope_type == "channel" else scope_id
+        if message_text:
+            save_chat_message(chat_scope_id, user_id, display_name or user_id, message_text, "text", getattr(message, "id", ""), scope_type, getattr(author, "qq_ref_idx", ""))
+        image_urls = getattr(author, "chat_image_urls", None)
+        if image_urls is None:
+            image_urls = [item.url for item in getattr(message, "attachments", []) or [] if (getattr(item, "content_type", "") or "").startswith("image")]
+        for image_url in image_urls:
+            try:
+                stored_url = await cache_image(image_url, BASE_DIR)
+            except Exception:
+                stored_url = image_url
+            save_chat_message(chat_scope_id, user_id, display_name or user_id, stored_url, "image", getattr(message, "id", ""), scope_type, getattr(author, "qq_ref_idx", ""))
 
         now_ts = time.time()
         last_forward_ts = forward_reply_cooldown.get(scope_id, 0)
-        message_lower = message_text.lower()
-        if "趣味生煎" in message_text:
-            await message.reply(content="已品尝")
-            return
-        has_keyword = any(keyword in message_lower for keyword in FORWARD_KEYWORDS)
-        has_forward = "已转发" in message_text
+        reply_body = getattr(author, "auto_reply_body", None)
+        if reply_body is None:
+            reply_body = message_body(message_text)
+        if get_setting("auto_reply", True):
+            for rule in get_auto_reply_rules():
+                if not matches_reply_rule(rule, reply_body, scope_id, mentioned):
+                    continue
+                cooldown_key = (scope_id, rule["id"])
+                last_reply = auto_reply_cooldowns.get(cooldown_key)
+                if last_reply is not None and now_ts - last_reply < rule["cooldown"]:
+                    continue
+                auto_reply_cooldowns[cooldown_key] = now_ts
+                try:
+                    await message.reply(content=rule["reply"])
+                except Exception:
+                    auto_reply_cooldowns.pop(cooldown_key, None)
+                    raise
+                return
+        message_lower = reply_body.casefold()
+        has_keyword = any(keyword.casefold() in message_lower for keyword in get_forward_keywords())
+        has_forward = "已转发" in reply_body
         if get_setting("forward_reply", True) and (has_keyword or has_forward):
             if has_keyword:
                 await message.reply(content="已转发")
@@ -5134,7 +5589,7 @@ class TinyThingsBot(botpy.Client):
                 return
             try:
                 answer = await deepseek_web.ask(scope_id, prompt)
-                await message.reply(content=answer)
+                await self._reply_with_image(message, scope_id, answer)
             except RuntimeError:
                 await message.reply(content="⚠️ AI 暂时不可用，请稍后再试。")
             return
@@ -5834,7 +6289,7 @@ class TinyThingsBot(botpy.Client):
                 return
             try:
                 answer = await deepseek_web.ask(scope_id, prompt)
-                await message.reply(content=answer)
+                await self._reply_with_image(message, scope_id, answer)
             except RuntimeError as error:
                 await message.reply(content="⚠️ AI 暂时不可用，请稍后再试。")
             return
