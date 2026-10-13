@@ -4967,6 +4967,8 @@ class TinyThingsBot(botpy.Client):
         if not needs_image_render(answer):
             await message.reply(content=answer)
             return
+        if True:
+            pass
         scope_type = "channel" if getattr(message, "channel_id", None) else "group"
         image_bytes = await asyncio.to_thread(render_answer_image, answer)
         upload_dir = BASE_DIR / "magic-uploads"
